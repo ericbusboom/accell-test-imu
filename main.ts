@@ -6,6 +6,10 @@ servos.P1.setAngle(90)
 
 let run = false;
 
+function degToRad(degrees: number): number {
+    return degrees * (Math.PI / 180);
+}
+
 function mkStepServo(
     servo: servos.PinServo,
     step: number,
@@ -42,29 +46,32 @@ function mkStepServo(
 input.onButtonPressed(Button.A, function () {
     run = !run
 })
+
 /**
- * Scales a value from the input range [1024, -1024] to the output range [180, 0].
- * @param input - The value to scale.
- * @returns The scaled value.
+ * Creates a scaling function that maps an input range to an output range.
+ * The returned function closes over the provided ranges.
+ *
+ * @param inputMin - Minimum of input range.
+ * @param inputMax - Maximum of input range.
+ * @param outputMin - Minimum of output range.
+ * @param outputMax - Maximum of output range.
+ * @returns A function that scales an input number.
  */
-function scaleInput(input: number): number {
-    // Define the input range
-    const inputMin = 1024;
-    const inputMax = -1024;
-
-    // Define the output range
-    const outputMin = 180;
-    const outputMax = 0;
-
-    // Compute the scaled value
-    const scaled = ((input - inputMin) / (inputMax - inputMin)) * (outputMax - outputMin) + outputMin;
-
-    return scaled;
+function makeScaler(
+    inputMin: number,
+    inputMax: number,
+    outputMin: number,
+    outputMax: number
+): (input: number) => number {
+    // This inner function will have access to inputMin, inputMax, outputMin, outputMax
+    return function (input: number): number {
+        return ((input - inputMin) / (inputMax - inputMin)) * (outputMax - outputMin) + outputMin;
+    };
 }
 
 
 // Function to add a new value and calculate the running average
-function addAndAverage(x: number, l: number = 5) {
+function addAndAverage(x: number, l: number = 1) {
     // Add the new value to the end
     a.push(x);
 
@@ -85,14 +92,23 @@ function addAndAverage(x: number, l: number = 5) {
     return average;
 }
 
+const imuScaler = makeScaler(1024, -1024, -1, 1);
+
 
 const ss = mkStepServo(servos.P1, 2, 30, function(angle: number){
+
+    // This is actually a 360 degree servo
+    angle *= 2
+
     let m = addAndAverage(input.acceleration(Dimension.Y))
 
-    let v = scaleInput(m);
+    let v = imuScaler(m);
 
-    serial.writeValue("a", angle)
+    let a_r = degToRad(angle)
+
+    serial.writeValue("c", Math.cos(a_r))
     serial.writeValue("x", v)
+    serial.writeValue("diff", v - Math.cos(a_r))
 })
 
 basic.forever(function () {
